@@ -105,11 +105,19 @@ def match(people_boxes, obj_boxes, depth_map = None):
 
         cost_matrix = np.zeros((num_people, num_objs))
         for i, person_box in enumerate(people_boxes):
-            depth_p = depth_map([int(abs(person_box.xyxy[1] - person_box.xyxy[3])/2.0 + min(person_box.xyxy[1],person_box.xyxy[3]))]
-                                [int(abs(person_box.xyxy[0] - person_box.xyxy[2])/2.0 + min(person_box.xyxy[0],person_box.xyxy[2]))])
+            # depth_p = depth_map([int(abs(person_box.xyxy[1] - person_box.xyxy[3])/2.0 + min(person_box.xyxy[1],person_box.xyxy[3]))]
+            #                     [int(abs(person_box.xyxy[0] - person_box.xyxy[2])/2.0 + min(person_box.xyxy[0],person_box.xyxy[2]))])
+            x1, y1, x2, y2 = person_box.xyxy
+            cx = int((x1 + x2) / 2)
+            cy = int((y1 + y2) / 2)
+            depth_p = depth_map([cy][cx])
             for j, obj_box in enumerate(obj_boxes):
-                depth_o = depth_map([int(abs(obj_box.xyxy[1] - obj_box.xyxy[3])/2.0 + min(obj_box.xyxy[1],obj_box.xyxy[3]))]
-                                    [int(abs(obj_box.xyxy[0] - obj_box.xyxy[2])/2.0 + min(obj_box.xyxy[0],obj_box.xyxy[2]))])
+                # depth_o = depth_map([int(abs(obj_box.xyxy[1] - obj_box.xyxy[3])/2.0 + min(obj_box.xyxy[1],obj_box.xyxy[3]))]
+                #                     [int(abs(obj_box.xyxy[0] - obj_box.xyxy[2])/2.0 + min(obj_box.xyxy[0],obj_box.xyxy[2]))])
+                x3, y3, x4, y4 = obj_box.xyxy
+                cx_ = int((x3 + x4) / 2)
+                cy_ = int((y3 + y4) / 2)
+                depth_o = depth_map([cy_][cx_])
                 depth_diff = abs(depth_p - depth_o)
                 iou = calculate_iou(person_box, obj_box)
                 # if iou > iou_threshold:
@@ -242,33 +250,6 @@ def process(device, model, model_type, image, input_size, target_size, optimize,
 
     return prediction
 
-def create_side_by_side(image, depth, grayscale):
-    """
-    Take an RGB image and depth map and place them side by side. This includes a proper normalization of the depth map
-    for better visibility.
-
-    Args:
-        image: the RGB image
-        depth: the depth map
-        grayscale: use a grayscale colormap?
-
-    Returns:
-        the image and depth map place side by side
-    """
-    depth_min = depth.min()
-    depth_max = depth.max()
-    normalized_depth = 255 * (depth - depth_min) / (depth_max - depth_min)
-    normalized_depth *= 3
-
-    right_side = np.repeat(np.expand_dims(normalized_depth, 2), 3, axis=2) / 3
-    if not grayscale:
-        right_side = cv2.applyColorMap(np.uint8(right_side), cv2.COLORMAP_INFERNO)
-
-    if image is None:
-        return right_side
-    else:
-        return np.concatenate((image, right_side), axis=1)
-
 model_path = 'E:\workshop\MiDaS-master\MiDaS-master\weights\dpt_hybrid_384.pt'
 first_execution = True
 
@@ -304,6 +285,7 @@ def run(
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         vid_stride=1,  # video frame-rate stride
+        use_depth=False, # use depth or not
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -340,7 +322,6 @@ def run(
     # depth model loading
     model_type = "dpt_hybrid_384"
     model_d, transform, net_w, net_h = load_model(device, model_path, model_type, False, None, False)
-    print(transform)
 
     #########################################################################
 
@@ -375,21 +356,23 @@ def run(
 
         #########################################################################\
         # depth estimation
-        if img_d is not None:
-            # input
-            # img_d /= 255.0
-            img_d = torch.squeeze(img_d).permute(1,2,0)
-            print(img_d.shape)
-            img_d = img_d.to('cpu').numpy()
-            original_image_rgb = img_d  # in [0, 1]
-            print(original_image_rgb.shape)
-            image = transform({"image": original_image_rgb})["image"]
+        depth_map = None
+        if use_depth:
+            if img_d is not None:
+                # input
+                # img_d /= 255.0
+                img_d = torch.squeeze(img_d).permute(1,2,0)
+                print(img_d.shape)
+                img_d = img_d.to('cpu').numpy()
+                original_image_rgb = img_d  # in [0, 1]
+                print(original_image_rgb.shape)
+                image = transform({"image": original_image_rgb})["image"]
 
-            # compute
-            with torch.no_grad():
-                model_type = "dpt_hybrid_384"
-                optimize=False
-                depth_map = process(device, model_d, model_type, image, (net_w, net_h), original_image_rgb.shape[1::-1], optimize, False)
+                # compute
+                with torch.no_grad():
+                    model_type = "dpt_hybrid_384"
+                    optimize=False
+                    depth_map = process(device, model_d, model_type, image, (net_w, net_h), original_image_rgb.shape[1::-1], optimize, False)
                 # print(f"depth map: {depth_map}")
                 # print(f"depth map shape: {depth_map.shape}")
         #########################################################################
@@ -562,6 +545,7 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--vid-stride', type=int, default=1, help='video frame-rate stride')
+    parser.add_argument('--use_depth', default=False, action='store_true', help='use depth or not')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))
