@@ -283,7 +283,8 @@ def run(
                     )
 
             # re_pred = [torch.cat(re_pred,dim=0)]
-            re_pred.append(torch.cat(re_pred_,dim=0))
+            if re_pred_:
+                re_pred.append(torch.cat(re_pred_,dim=0))
         # re_pred = torch.cat(re_total,dim=0)
         print(f"pred: {re_pred}")
         # print(re_total)
