@@ -418,8 +418,11 @@ def run(
             # re_pred = [torch.cat(re_pred,dim=0)]
             if re_pred_:
                 re_pred.append(torch.cat(re_pred_,dim=0))
+
+        if len(re_pred) == 0:
+            re_pred = [[]]
         # re_pred = torch.cat(re_total,dim=0)
-        print(f"pred: {re_pred}")
+        # print(f"pred: {re_pred}")
         # print(re_total)
 
         #########################################################################
@@ -545,7 +548,7 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--vid-stride', type=int, default=1, help='video frame-rate stride')
-    parser.add_argument('--use_depth', default=False, action='store_true', help='use depth or not')
+    parser.add_argument('--use_depth', default=False, action='store_true', help='use depth or not') ## additional
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))
