@@ -1,10 +1,12 @@
 import cv2
 
-img = cv2.imread('E:\workshop\MiDaS-master\MiDaS-master\input\\test.jpg')
+img = cv2.imread('E:\workshop\MiDaS-master\MiDaS-master\input\\000000.jpg')
 if img.ndim == 2:
     img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) / 255.0
+
+print(img.shape)
 
 
 
@@ -132,6 +134,8 @@ def run(img, model_path, model_type="dpt_hybrid_384", optimize=False, side=False
 
     model, transform, net_w, net_h = load_model(device, model_path, model_type, optimize, height, square)
 
+    print(transform)
+
     # get img
     if img is None:
         print("No input path specified. Grabbing images from camera.")
@@ -147,6 +151,7 @@ def run(img, model_path, model_type="dpt_hybrid_384", optimize=False, side=False
         with torch.no_grad():
             prediction = process(device, model, model_type, image, (net_w, net_h), original_image_rgb.shape[1::-1],
                                      optimize, False)
+            print(image.shape)
             print(prediction)
             print(prediction.shape)
 
