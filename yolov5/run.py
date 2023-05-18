@@ -33,9 +33,13 @@ import os
 import platform
 import sys
 from pathlib import Path
+import copy
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+
+from imutils.video import VideoStream
+from midas.model_loader import default_models, load_model
 
 import torch
 
@@ -79,17 +83,22 @@ def hungarian_matching(cost_matrix):
     return list(zip(row_indices, col_indices))
 
 # 将人和帽子进行匹配
-def match_people_with_hats(people_boxes, hat_boxes, iou_threshold=0):
+def match_people_with_hats(people_boxes, obj_boxes, iou_threshold=0, depth_map = None):
     num_people = len(people_boxes)
-    num_hats = len(hat_boxes)
+    num_hats = len(obj_boxes)
 
-    # 构建IoU矩阵
+    # 构建cost矩阵
     cost_matrix = np.zeros((num_people, num_hats))
     for i, person_box in enumerate(people_boxes):
-        for j, hat_box in enumerate(hat_boxes):
+        for j, hat_box in enumerate(obj_boxes):
             iou = calculate_iou(person_box, hat_box)
             if iou > iou_threshold:
                 cost_matrix[i][j] = iou
+    
+    # if depth_map:
+    #     for i, person_box in enumerate(people_boxes):
+    #         for j, hat_box in enumerate(obj_boxes):
+    #             depth_diff = 
     # 使用匈牙利算法进行最大权匹配
     matches = hungarian_matching(cost_matrix)
 
@@ -157,6 +166,98 @@ LABEL_DICT = {
 }
 
 ####################################################################################
+# depth estimation part
+def process(device, model, model_type, image, input_size, target_size, optimize, use_camera):
+    """
+    Run the inference and interpolate.
+
+    Args:
+        device (torch.device): the torch device used
+        model: the model used for inference
+        model_type: the type of the model
+        image: the image fed into the neural network
+        input_size: the size (width, height) of the neural network input (for OpenVINO)
+        target_size: the size (width, height) the neural network output is interpolated to
+        optimize: optimize the model to half-floats on CUDA?
+        use_camera: is the camera used?
+
+    Returns:
+        the prediction
+    """
+    global first_execution
+
+    if "openvino" in model_type:
+        if first_execution or not use_camera:
+            print(f"    Input resized to {input_size[0]}x{input_size[1]} before entering the encoder")
+            first_execution = False
+
+        sample = [np.reshape(image, (1, 3, *input_size))]
+        prediction = model(sample)[model.output(0)][0]
+        prediction = cv2.resize(prediction, dsize=target_size,
+                                interpolation=cv2.INTER_CUBIC)
+    else:
+        sample = torch.from_numpy(image).to(device).unsqueeze(0)
+
+        if optimize and device == torch.device("cuda"):
+            if first_execution:
+                print("  Optimization to half-floats activated. Use with caution, because models like Swin require\n"
+                      "  float precision to work properly and may yield non-finite depth values to some extent for\n"
+                      "  half-floats.")
+            sample = sample.to(memory_format=torch.channels_last)
+            sample = sample.half()
+
+        if first_execution or not use_camera:
+            height, width = sample.shape[2:]
+            print(f"    Input resized to {width}x{height} before entering the encoder")
+            first_execution = False
+
+        prediction = model.forward(sample)
+        prediction = (
+            torch.nn.functional.interpolate(
+                prediction.unsqueeze(1),
+                size=target_size[::-1],
+                mode="bicubic",
+                align_corners=False,
+            )
+            .squeeze()
+            .cpu()
+            .numpy()
+        )
+
+    return prediction
+
+def create_side_by_side(image, depth, grayscale):
+    """
+    Take an RGB image and depth map and place them side by side. This includes a proper normalization of the depth map
+    for better visibility.
+
+    Args:
+        image: the RGB image
+        depth: the depth map
+        grayscale: use a grayscale colormap?
+
+    Returns:
+        the image and depth map place side by side
+    """
+    depth_min = depth.min()
+    depth_max = depth.max()
+    normalized_depth = 255 * (depth - depth_min) / (depth_max - depth_min)
+    normalized_depth *= 3
+
+    right_side = np.repeat(np.expand_dims(normalized_depth, 2), 3, axis=2) / 3
+    if not grayscale:
+        right_side = cv2.applyColorMap(np.uint8(right_side), cv2.COLORMAP_INFERNO)
+
+    if image is None:
+        return right_side
+    else:
+        return np.concatenate((image, right_side), axis=1)
+
+model_path = 'E:\workshop\MiDaS-master\MiDaS-master\weights\dpt_hybrid_384.pt'
+first_execution = True
+
+####################################################################################
+
 
 @smart_inference_mode()
 def run(
@@ -219,10 +320,22 @@ def run(
         dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt, vid_stride=vid_stride)
     vid_path, vid_writer = [None] * bs, [None] * bs
 
+    #########################################################################
+    # depth model loading
+
+    model_d, transform, net_w, net_h = load_model(device, model_path, model_type="dpt_hybrid_384", optimize=False, side=False, square=False)
+
+    #########################################################################
+
     # Run inference
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
     for path, im, im0s, vid_cap, s in dataset:
+        # print(im.shape)
+        # print(im0s.shape)
+
+        img_d = copy.deepcopy(im)
+
         with dt[0]:
             im = torch.from_numpy(im).to(model.device)
             im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
@@ -244,6 +357,21 @@ def run(
 
         # print(f"Self test: xywh:{pred}")
 
+        #########################################################################\
+        # depth estimation
+        if img_d is not None:
+            # input
+            img_d /= 255.0
+            original_image_rgb = img_d  # in [0, 1]
+            image = transform({"image": original_image_rgb})["image"]
+
+            # compute
+            with torch.no_grad():
+                model_type = "dpt_hybrid_384"
+                optimize=False
+                depth_map = process(device, model_d, model_type, image, (net_w, net_h), original_image_rgb.shape[1::-1], optimize, False)
+                print(f"depth map: {depth_map}")
+                print(f"depth map shape: {depth_map.shape}")
         #########################################################################
         # additional code(Chen Huizhou)
         re_pred = []
@@ -289,8 +417,6 @@ def run(
         print(f"pred: {re_pred}")
         # print(re_total)
 
-        
-    
         #########################################################################
 
         # Process predictions
@@ -344,6 +470,7 @@ def run(
 
             # Stream results
             im0 = annotator.result()
+            # print(f"asdn aiuhfaoihdf oiahsdoif hasoi{im0.shape}")
             if view_img:
                 if platform.system() == 'Linux' and p not in windows:
                     windows.append(p)
