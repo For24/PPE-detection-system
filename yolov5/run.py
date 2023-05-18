@@ -90,7 +90,7 @@ def match(people_boxes, obj_boxes, depth_map = None):
     num_objs = len(obj_boxes)
 
     # 构建cost矩阵
-    if not depth_map:
+    if depth_map is None:
         cost_matrix = np.zeros((num_people, num_objs))
         for i, person_box in enumerate(people_boxes):
             for j, obj_box in enumerate(obj_boxes):
