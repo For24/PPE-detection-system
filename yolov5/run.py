@@ -34,10 +34,12 @@ import platform
 import sys
 from pathlib import Path
 import copy
+import cv2
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+import midas
 from imutils.video import VideoStream
 from midas.model_loader import default_models, load_model
 
@@ -322,8 +324,9 @@ def run(
 
     #########################################################################
     # depth model loading
-
-    model_d, transform, net_w, net_h = load_model(device, model_path, model_type="dpt_hybrid_384", optimize=False, side=False, square=False)
+    model_type = "dpt_hybrid_384"
+    model_d, transform, net_w, net_h = load_model(device, model_path, model_type, False, None, False)
+    print(transform)
 
     #########################################################################
 
@@ -331,15 +334,16 @@ def run(
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
     for path, im, im0s, vid_cap, s in dataset:
-        # print(im.shape)
+        print(im.shape)
         # print(im0s.shape)
 
-        img_d = copy.deepcopy(im)
+
 
         with dt[0]:
             im = torch.from_numpy(im).to(model.device)
             im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
             im /= 255  # 0 - 255 to 0.0 - 1.0
+            img_d = copy.deepcopy(im)
             if len(im.shape) == 3:
                 im = im[None]  # expand for batch dim
 
@@ -361,8 +365,12 @@ def run(
         # depth estimation
         if img_d is not None:
             # input
-            img_d /= 255.0
+            # img_d /= 255.0
+            img_d = torch.squeeze(img_d).permute(1,2,0)
+            print(img_d.shape)
+            img_d = img_d.to('cpu').numpy()
             original_image_rgb = img_d  # in [0, 1]
+            print(original_image_rgb.shape)
             image = transform({"image": original_image_rgb})["image"]
 
             # compute
