@@ -85,7 +85,7 @@ def hungarian_matching(cost_matrix):
     return list(zip(row_indices, col_indices))
 
 # 目标匹配
-def match_people_with_hats(people_boxes, obj_boxes, depth_map = None):
+def match(people_boxes, obj_boxes, depth_map = None):
     num_people = len(people_boxes)
     num_objs = len(obj_boxes)
 
@@ -390,8 +390,8 @@ def run(
                 model_type = "dpt_hybrid_384"
                 optimize=False
                 depth_map = process(device, model_d, model_type, image, (net_w, net_h), original_image_rgb.shape[1::-1], optimize, False)
-                print(f"depth map: {depth_map}")
-                print(f"depth map shape: {depth_map.shape}")
+                # print(f"depth map: {depth_map}")
+                # print(f"depth map shape: {depth_map.shape}")
         #########################################################################
         # additional code(Chen Huizhou)
         re_pred = []
@@ -410,10 +410,12 @@ def run(
                 elif int(p[-1]) == 2:
                     hats.append(obj)
 
-            vest_match, _ = match_people_with_hats(workers, vests, 0)
-            hat_match, _ = match_people_with_hats(workers, hats, 0)
+            vest_match, _ = match(workers, vests, depth_map=depth_map)
+            hat_match, _ = match(workers, hats, depth_map=depth_map)
+
             print(f"vest match pairs: {vest_match}")
             print(f"hat match pairs: {hat_match}")
+
             if vest_match.items():
                 for item in vest_match.items():
                     workers[item[0]].assign_vest(vests[item[1]])
