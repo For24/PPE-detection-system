@@ -81,30 +81,44 @@ def calculate_iou(box1, box2):
     return iou
 
 def hungarian_matching(cost_matrix):
-    row_indices, col_indices = linear_sum_assignment(-cost_matrix)
+    row_indices, col_indices = linear_sum_assignment(cost_matrix)
     return list(zip(row_indices, col_indices))
 
-# 将人和帽子进行匹配
-def match_people_with_hats(people_boxes, obj_boxes, iou_threshold=0, depth_map = None):
+# 目标匹配
+def match_people_with_hats(people_boxes, obj_boxes, depth_map = None):
     num_people = len(people_boxes)
-    num_hats = len(obj_boxes)
+    num_objs = len(obj_boxes)
 
     # 构建cost矩阵
-    cost_matrix = np.zeros((num_people, num_hats))
-    for i, person_box in enumerate(people_boxes):
-        for j, hat_box in enumerate(obj_boxes):
-            iou = calculate_iou(person_box, hat_box)
-            if iou > iou_threshold:
-                cost_matrix[i][j] = iou
+    if not depth_map:
+        cost_matrix = np.zeros((num_people, num_objs))
+        for i, person_box in enumerate(people_boxes):
+            for j, obj_box in enumerate(obj_boxes):
+                iou = calculate_iou(person_box, obj_box)
+                # if iou > iou_threshold:
+                cost_matrix[i][j] = iou * (-1.0)
     
-    # if depth_map:
-    #     for i, person_box in enumerate(people_boxes):
-    #         for j, hat_box in enumerate(obj_boxes):
-    #             depth_diff = 
-    # 使用匈牙利算法进行最大权匹配
+    else:
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
+        depth_map = (depth_map - depth_min) / (depth_max - depth_min) # between 0 to 1
+
+        cost_matrix = np.zeros((num_people, num_objs))
+        for i, person_box in enumerate(people_boxes):
+            depth_p = depth_map([int(abs(person_box.xyxy[1] - person_box.xyxy[3])/2.0 + min(person_box.xyxy[1],person_box.xyxy[3]))]
+                                [int(abs(person_box.xyxy[0] - person_box.xyxy[2])/2.0 + min(person_box.xyxy[0],person_box.xyxy[2]))])
+            for j, obj_box in enumerate(obj_boxes):
+                depth_o = depth_map([int(abs(obj_box.xyxy[1] - obj_box.xyxy[3])/2.0 + min(obj_box.xyxy[1],obj_box.xyxy[3]))]
+                                    [int(abs(obj_box.xyxy[0] - obj_box.xyxy[2])/2.0 + min(obj_box.xyxy[0],obj_box.xyxy[2]))])
+                depth_diff = abs(depth_p - depth_o)
+                iou = calculate_iou(person_box, obj_box)
+                # if iou > iou_threshold:
+                cost_matrix[i][j] = iou * (-0.5) + depth_diff * 0.5
+                    
+
     matches = hungarian_matching(cost_matrix)
 
-    # 将匹配结果以字典形式返回
+
     match_dict = {}
     for i, j in matches:
         match_dict[i] = j
@@ -334,10 +348,8 @@ def run(
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
     for path, im, im0s, vid_cap, s in dataset:
-        print(im.shape)
+        # print(im.shape)
         # print(im0s.shape)
-
-
 
         with dt[0]:
             im = torch.from_numpy(im).to(model.device)
