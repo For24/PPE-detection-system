@@ -110,14 +110,14 @@ def match(people_boxes, obj_boxes, depth_map = None):
             x1, y1, x2, y2 = person_box.xyxy
             cx = int((x1 + x2) / 2)
             cy = int((y1 + y2) / 2)
-            depth_p = depth_map([cy][cx])
+            depth_p = depth_map[cy][cx]
             for j, obj_box in enumerate(obj_boxes):
                 # depth_o = depth_map([int(abs(obj_box.xyxy[1] - obj_box.xyxy[3])/2.0 + min(obj_box.xyxy[1],obj_box.xyxy[3]))]
                 #                     [int(abs(obj_box.xyxy[0] - obj_box.xyxy[2])/2.0 + min(obj_box.xyxy[0],obj_box.xyxy[2]))])
                 x3, y3, x4, y4 = obj_box.xyxy
                 cx_ = int((x3 + x4) / 2)
                 cy_ = int((y3 + y4) / 2)
-                depth_o = depth_map([cy_][cx_])
+                depth_o = depth_map[cy_][cx_]
                 depth_diff = abs(depth_p - depth_o)
                 iou = calculate_iou(person_box, obj_box)
                 # if iou > iou_threshold:
