@@ -246,45 +246,47 @@ def run(
 
         #########################################################################
         # additional code(Chen Huizhou)
-        # re_total = []
-        # for pre in pred:
-        workers = []
-        hats = []
-        vests = []
-
-
-        for p in pred[0]: ## 实例化每个worker，vest， hat，创建class_count字典记录数量
-            obj = CLASS[int(p[-1])](xyxy = p[:4])
-            if int(p[-1]) == 0:
-                workers.append(obj)
-            elif int(p[-1]) == 1:
-                vests.append(obj)
-            elif int(p[-1]) == 2:
-                hats.append(obj)
-
-        vest_match, _ = match_people_with_hats(workers, vests, 0)
-        hat_match, _ = match_people_with_hats(workers, hats, 0)
-        print(f"vest match pairs: {vest_match}")
-        print(f"hat match pairs: {hat_match}")
-        if vest_match.items():
-            for item in vest_match.items():
-                workers[item[0]].assign_vest(vests[item[1]])
-        if hat_match.items():
-            for item in hat_match.items():
-                workers[item[0]].assign_hat(hats[item[1]])
-            
         re_pred = []
-        for worker in workers:
-            worker.relabel()
-            re_pred.append(
-                torch.cat((worker.xyxy.view(1,-1),
-                           torch.tensor([[1.0, worker.re_label]]).to(device)), 
-                           dim = 1)
-                )
+        for pre in pred:
+            workers = []
+            hats = []
+            vests = []
 
-        re_pred = [torch.cat(re_pred,dim=0)]
-        print(f"pred: {pred}")
-        print(re_pred)
+
+            for p in pre: ## 实例化每个worker，vest， hat，创建class_count字典记录数量
+                obj = CLASS[int(p[-1])](xyxy = p[:4])
+                if int(p[-1]) == 0:
+                    workers.append(obj)
+                elif int(p[-1]) == 1:
+                    vests.append(obj)
+                elif int(p[-1]) == 2:
+                    hats.append(obj)
+
+            vest_match, _ = match_people_with_hats(workers, vests, 0)
+            hat_match, _ = match_people_with_hats(workers, hats, 0)
+            print(f"vest match pairs: {vest_match}")
+            print(f"hat match pairs: {hat_match}")
+            if vest_match.items():
+                for item in vest_match.items():
+                    workers[item[0]].assign_vest(vests[item[1]])
+            if hat_match.items():
+                for item in hat_match.items():
+                    workers[item[0]].assign_hat(hats[item[1]])
+                
+            re_pred_ = []
+            for worker in workers:
+                worker.relabel()
+                re_pred_.append(
+                    torch.cat((worker.xyxy.view(1,-1),
+                            torch.tensor([[1.0, worker.re_label]]).to(device)), 
+                            dim = 1)
+                    )
+
+            # re_pred = [torch.cat(re_pred,dim=0)]
+            re_pred.append(torch.cat(re_pred_,dim=0))
+        # re_pred = torch.cat(re_total,dim=0)
+        print(f"pred: {re_pred}")
+        # print(re_total)
 
         
     
