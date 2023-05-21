@@ -5,6 +5,10 @@ Install following requirements:
 
 pip install -r requirements.txt
 
+then, cd to our source folder:
+
+cd source
+
 Detect on image or video file or video stream from webcam:
 
 for example, run detect on an image file:
