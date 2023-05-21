@@ -1,13 +1,13 @@
 # PPE-Detect
 To use our system, you have to have a GPU with at least 8 GB GPU memory.
 
+First, cd to our source folder:
+
+cd source
+
 Install following requirements:
 
 pip install -r requirements.txt
-
-then, cd to our source folder:
-
-cd source
 
 Detect on image or video file or video stream from webcam:
 
